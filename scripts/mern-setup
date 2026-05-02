@@ -39,7 +39,7 @@ MONGO_URI=${2:-}
 JWT_SECRET=${3:-}
 FRONTEND_URL=${4:-}
 
-# -------- INTERACTIVE FALLBACK --------
+# -------- INTERACTIVE --------
 if [[ -z "$APP_NAME" ]]; then
   read -p "Project name (default: mern-app): " INPUT < /dev/tty
   APP_NAME=${INPUT:-mern-app}
@@ -91,8 +91,6 @@ pkg.scripts={dev:'nodemon server.js',start:'node server.js'};
 require('fs').writeFileSync('package.json', JSON.stringify(pkg,null,2));
 "
 
-mkdir controllers models routes middleware
-
 cat <<EOF > server.js
 const express = require('express');
 const mongoose = require('mongoose');
@@ -124,7 +122,7 @@ cd ..
 # =========================
 echo "Setting up frontend..."
 
-# --- VITE FIX ---
+# Vite creation (robust)
 if npm create vite@latest frontend -- --template react >/dev/null 2>&1; then
   echo "Vite created via npm"
 else
@@ -137,25 +135,23 @@ cd frontend
 npm install >/dev/null
 npm install -D tailwindcss postcss autoprefixer >/dev/null
 
-# --- TAILWIND FIX ---
-echo "Initializing Tailwind..."
+# -------- TAILWIND (NO CLI) --------
+echo "Setting up Tailwind (manual config)..."
 
-if npx --yes tailwindcss init -p >/dev/null 2>&1; then
-  echo "Tailwind initialized via npx"
-elif [ -f "./node_modules/.bin/tailwindcss" ]; then
-  ./node_modules/.bin/tailwindcss init -p
-  echo "Tailwind initialized via local binary"
-else
-  echo "❌ Tailwind CLI failed"
-  exit 1
-fi
-
-# config files
 cat <<EOF > tailwind.config.js
 export default {
   content: ["./index.html","./src/**/*.{js,jsx}"],
   theme: { extend: {} },
   plugins: [],
+}
+EOF
+
+cat <<EOF > postcss.config.js
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
 }
 EOF
 
@@ -193,3 +189,6 @@ echo ""
 echo "Frontend: http://localhost:5173"
 echo "Backend:  http://localhost:5000/api"
 echo ""
+echo "⚠️ Update MongoDB URI in backend/.env"
+echo ""
+echo "🚀 Ready to build!"q
