@@ -9,11 +9,6 @@ show_help() {
   echo "Usage:"
   echo "  mern-setup [project] [mongo_uri] [jwt_secret] [frontend_url]"
   echo ""
-  echo "Examples:"
-  echo "  mern-setup"
-  echo "  mern-setup myapp"
-  echo "  mern-setup myapp mongodb://localhost:27017 devsecret http://localhost:3000"
-  echo ""
 }
 
 if [[ "${1:-}" == "-help" || "${1:-}" == "--help" ]]; then
@@ -29,13 +24,12 @@ echo ""
 
 # -------- DEPENDENCY CHECK --------
 if ! command -v node >/dev/null 2>&1; then
-  echo "❌ Node.js is not installed."
-  echo "Install Node.js and re-run."
+  echo "❌ Node.js not installed"
   exit 1
 fi
 
 if ! command -v npm >/dev/null 2>&1; then
-  echo "❌ npm is not installed."
+  echo "❌ npm not installed"
   exit 1
 fi
 
@@ -46,14 +40,13 @@ JWT_SECRET=${3:-}
 FRONTEND_URL=${4:-}
 
 # -------- INTERACTIVE FALLBACK --------
-
 if [[ -z "$APP_NAME" ]]; then
   read -p "Project name (default: mern-app): " INPUT < /dev/tty
   APP_NAME=${INPUT:-mern-app}
 fi
 
 if [[ -z "$MONGO_URI" ]]; then
-  read -p "MongoDB URI (leave blank to fill later): " INPUT < /dev/tty
+  read -p "MongoDB URI: " INPUT < /dev/tty
   MONGO_URI=${INPUT:-your_mongodb_connection_string_here}
 fi
 
@@ -70,17 +63,13 @@ fi
 # -------- CONFIRM --------
 echo ""
 echo "-------------------------------------------"
-echo "Confirm Setup:"
 echo "Project: $APP_NAME"
 echo "Mongo URI: $MONGO_URI"
 echo "Frontend URL: $FRONTEND_URL"
 echo "-------------------------------------------"
 
 read -p "Continue? (y/n): " CONFIRM < /dev/tty
-if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-  echo "Setup cancelled."
-  exit 0
-fi
+[[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]] && echo "Cancelled." && exit 0
 
 # -------- ROOT --------
 mkdir "$APP_NAME"
@@ -90,8 +79,7 @@ cd "$APP_NAME"
 # BACKEND
 # =========================
 echo "Setting up backend..."
-mkdir backend
-cd backend
+mkdir backend && cd backend
 
 npm init -y >/dev/null
 npm install express mongoose cors dotenv >/dev/null
@@ -105,82 +93,21 @@ require('fs').writeFileSync('package.json', JSON.stringify(pkg,null,2));
 
 mkdir controllers models routes middleware
 
-cat <<EOF > models/appModel.js
-const mongoose = require('mongoose');
-
-const appSchema = new mongoose.Schema({
-  message: { type: String, required: true }
-}, { timestamps: true });
-
-module.exports = mongoose.model('App', appSchema);
-EOF
-
-cat <<EOF > controllers/appController.js
-const App = require('../models/appModel');
-
-exports.getApi = async (req, res, next) => {
-  try {
-    const data = await App.findOne();
-    res.json(data || { message: "API running" });
-  } catch (err) {
-    next(err);
-  }
-};
-EOF
-
-cat <<EOF > routes/appRoutes.js
-const express = require('express');
-const router = express.Router();
-const { getApi } = require('../controllers/appController');
-
-router.get('/', getApi);
-
-module.exports = router;
-EOF
-
-cat <<EOF > middleware/corsMiddleware.js
-const cors = require('cors');
-
-module.exports = cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
-});
-EOF
-
-cat <<EOF > middleware/errorMiddleware.js
-module.exports = (err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: err.message || "Server Error" });
-};
-EOF
-
 cat <<EOF > server.js
 const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-const corsMiddleware = require('./middleware/corsMiddleware');
-const errorMiddleware = require('./middleware/errorMiddleware');
-const appRoutes = require('./routes/appRoutes');
-
 const app = express();
+app.use(require('cors')({ origin: process.env.FRONTEND_URL }));
 
-app.use(corsMiddleware);
-app.use(express.json());
-
-app.use('/api', appRoutes);
+app.get('/api', (req,res)=>res.json({message:'API running'}));
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.log(err));
+.then(()=>console.log('MongoDB Connected'))
+.catch(console.error);
 
-const PORT = process.env.PORT || 5000;
-
-app.use(errorMiddleware);
-
-app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
-});
+app.listen(5000, ()=>console.log('Server running on 5000'));
 EOF
 
 cat <<EOF > .env
@@ -196,23 +123,37 @@ cd ..
 # FRONTEND
 # =========================
 echo "Setting up frontend..."
-npm create vite@latest frontend -- --template react >/dev/null
+
+# --- VITE FIX ---
+if npm create vite@latest frontend -- --template react >/dev/null 2>&1; then
+  echo "Vite created via npm"
+else
+  echo "Fallback: using npx"
+  npx --yes create-vite@latest frontend --template react
+fi
+
 cd frontend
 
 npm install >/dev/null
 npm install -D tailwindcss postcss autoprefixer >/dev/null
 
-# Fix: avoid npx bug
-if [ -f "./node_modules/.bin/tailwindcss" ]; then
+# --- TAILWIND FIX ---
+echo "Initializing Tailwind..."
+
+if npx --yes tailwindcss init -p >/dev/null 2>&1; then
+  echo "Tailwind initialized via npx"
+elif [ -f "./node_modules/.bin/tailwindcss" ]; then
   ./node_modules/.bin/tailwindcss init -p
+  echo "Tailwind initialized via local binary"
 else
-  echo "❌ Tailwind CLI not found"
+  echo "❌ Tailwind CLI failed"
   exit 1
 fi
 
+# config files
 cat <<EOF > tailwind.config.js
 export default {
-  content: ["./index.html","./src/**/*.{js,ts,jsx,tsx}"],
+  content: ["./index.html","./src/**/*.{js,jsx}"],
   theme: { extend: {} },
   plugins: [],
 }
@@ -225,27 +166,15 @@ cat <<EOF > src/index.css
 EOF
 
 cat <<EOF > src/App.jsx
-import { useEffect, useState } from "react";
-
-function App() {
-  const [msg, setMsg] = useState("");
-
-  useEffect(() => {
-    fetch("http://localhost:5000/api")
-      .then(res => res.json())
-      .then(data => setMsg(data.message));
-  }, []);
-
+export default function App(){
   return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="h-screen flex items-center justify-center">
       <h1 className="text-3xl font-bold text-blue-600">
-        {msg || "Loading..."}
+        MERN Ready 🚀
       </h1>
     </div>
-  );
+  )
 }
-
-export default App;
 EOF
 
 cd ..
@@ -258,18 +187,9 @@ echo "==========================================="
 echo "   ✅ MERN Project Created Successfully"
 echo "==========================================="
 echo ""
-
-echo "Project: $APP_NAME"
-echo ""
-echo "Run backend:"
-echo "  cd $APP_NAME/backend && npm run dev"
-echo ""
-echo "Run frontend:"
-echo "  cd $APP_NAME/frontend && npm run dev"
+echo "cd $APP_NAME/backend && npm run dev"
+echo "cd $APP_NAME/frontend && npm run dev"
 echo ""
 echo "Frontend: http://localhost:5173"
-echo "Backend API: http://localhost:5000/api"
+echo "Backend:  http://localhost:5000/api"
 echo ""
-echo "⚠️ Update MongoDB URI in backend/.env"
-echo ""
-echo "🚀 Ready to build!"
